@@ -1,3 +1,4 @@
+
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50">
     <div class="p-6 max-w-[1000px] w-full bg-gray-100 rounded-lg shadow">
@@ -26,6 +27,7 @@
 
       <!-- Результат -->
       <p class="mt-6 text-xl font-semibold text-center">Результат: {{ result }}</p>
+<PsiChart :computePsi="psiFunction" :key="result" />
     </div>
   </div>
 </template>
@@ -33,6 +35,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
 import { compile } from 'mathjs';
+import PsiChart from './PsiChart.vue';
 
 const psiInput = ref('sin(x)');
 const k = ref(1);
@@ -41,6 +44,7 @@ const ell = ref(1);
 const x = ref(2);
 const result = ref(0);
 const renderedFormula = ref('');
+const psiFunction = ref(() => 0); // реактивная функция для графика
 
 function updateLatex() {
   const psi = psiInput.value;
@@ -111,6 +115,40 @@ function calculate() {
   }
 
   result.value = total;
+  psiFunction.value = getPsiFunction();
+}
+
+function getPsiFunction() {
+  const psiExpr = compile(psiInput.value);
+  return (xVal) => {
+    try {
+      const y = 2 * k.value * xVal;
+      let total = psiExpr.evaluate({ x: xVal - 2 * n.value * ell.value });
+
+      for (let i = 1; i <= n.value; i++) {
+        const R = laguerreR(i, y);
+        const integral = numericalIntegral(t =>
+          Math.pow(t, i - 1) * Math.exp(k.value * (t - 1) * xVal) *
+          psiExpr.evaluate({ x: xVal - 2 * n.value * ell.value }), 0, 1);
+        total -= R * integral / ((2 * i + 1) * ell.value);
+      }
+
+      for (let j = 1; j <= n.value - 1; j++) {
+        for (let i = 1; i <= j; i++) {
+          const R = laguerreR(i, y);
+          const integral = numericalIntegral(t =>
+            Math.pow(t, i - 1) * Math.exp(k.value * (t - 1) * xVal) *
+            psiExpr.evaluate({ x: t - 2 * j * ell.value }), 0, 1);
+          total += R * integral / ((2 * j - 1) * ell.value);
+        }
+      }
+
+      return isFinite(total) ? total : 0;
+    } catch (e) {
+      console.warn("Ошибка при вычислении ψ̃(x):", e);
+      return 0;
+    }
+  };
 }
 
 watch([psiInput, k, n, ell, x], updateLatex, { immediate: true });
